@@ -1,0 +1,116 @@
+import psycopg2
+from connect import get_connection, close_connection, execute_sql_file
+
+class PhoneBookApp:
+    def __init__(self):
+        self.conn = get_connection()
+        if self.conn:
+            self._init_database()
+    
+    def _init_database(self):
+        try:
+            execute_sql_file(self.conn, 'create_tables.sql')
+            execute_sql_file(self.conn, 'functions.sql')
+            execute_sql_file(self.conn, 'procedures.sql')
+            print("Database initialized successfully!\n")
+        except Exception as e:
+            print(f"Init error: {e}")
+    
+    def search_contacts(self, pattern):
+        with self.conn.cursor() as cur:
+            cur.execute("SELECT * FROM search_contacts(%s);", (pattern,))
+            results = cur.fetchall()
+            return results
+    
+    def upsert_contact(self, name, phone):
+        with self.conn.cursor() as cur:
+            cur.execute("CALL upsert_contact(%s, %s);", (name, phone))
+            self.conn.commit()
+    
+    def bulk_insert(self, contacts):
+        contacts_array = [[name, phone] for name, phone in contacts]
+        
+        with self.conn.cursor() as cur:
+            cur.execute("CALL bulk_insert_contacts(%s);", (contacts_array,))
+            self.conn.commit()
+            if cur.statusmessage:
+                print(f"Bulk insert result: {cur.statusmessage}")
+    
+    def get_paginated(self, page_size, page_number):
+        with self.conn.cursor() as cur:
+            cur.execute("SELECT * FROM get_contacts_paginated(%s, %s);", 
+                       (page_size, page_number))
+            return cur.fetchall()
+    
+    def delete_contact(self, name=None, phone=None):
+        with self.conn.cursor() as cur:
+            cur.execute("CALL delete_contact(%s, %s);", (name, phone))
+            self.conn.commit()
+    
+    def delete_all(self):
+        with self.conn.cursor() as cur:
+            cur.execute("CALL delete_all_contacts();")
+            self.conn.commit()
+    
+    def show_all(self):
+        with self.conn.cursor() as cur:
+            cur.execute("SELECT * FROM phonebook ORDER BY id;")
+            results = cur.fetchall()
+            print("\n=== All Contacts ===")
+            for row in results:
+                print(f"ID: {row[0]}, Name: {row[1]}, Phone: {row[2]}")
+            print(f"Total: {len(results)}\n")
+            return results
+    
+    def close(self):
+        close_connection(self.conn)
+
+
+def main():
+    app = PhoneBookApp()
+    
+    print("=" * 50)
+    print("PhoneBook Application with Functions & Procedures")
+    print("=" * 50)
+    
+    print("\n1. Testing UPSERT:")
+    app.upsert_contact("Alice Johnson", "+1234567890")
+    app.upsert_contact("Bob Smith", "+9876543210")
+    app.upsert_contact("Alice Johnson", "+1111111111")
+    
+    app.show_all()
+    
+    print("\n2. Testing Pattern Search:")
+    pattern = "ali"
+    results = app.search_contacts(pattern)
+    print(f"Search results for '{pattern}':")
+    for r in results:
+        print(f"  - {r[1]}: {r[2]}")
+    
+    print("\n3. Testing Pagination:")
+    paginated = app.get_paginated(page_size=2, page_number=1)
+    print("Page 1 (size 2):")
+    for r in paginated:
+        print(f"  - {r[1]}: {r[2]} (Total: {r[3]})")
+    
+    print("\n4. Testing Bulk Insert with validation:")
+    contacts_to_add = [
+        ("Charlie Brown", "+77011234567"),
+        ("David Wilson", "invalid_phone"),
+        ("Eva Green", "+77027654321"),
+        ("Frank Castle", "123"),
+    ]
+    app.bulk_insert(contacts_to_add)
+    app.show_all()
+    
+    print("\n5. Testing Delete Procedure:")
+    app.delete_contact(name="Bob Smith")
+    app.delete_contact(phone="+1111111111")
+    app.show_all()
+    
+    app.close()
+    print("\nAll tests completed!")
+
+
+if __name__ == "__main__":
+    main()
