@@ -1,0 +1,48 @@
+import psycopg2
+from config import DB_CONFIG
+
+def test_all():
+    conn = psycopg2.connect(**DB_CONFIG)
+    conn.autocommit = False
+    cur = conn.cursor()
+    
+    print("=== TESTING Practice 8 ===\n")
+    
+    print("1. Testing search_contacts function...")
+    cur.execute("SELECT * FROM search_contacts('alice');")
+    print(f"   Found {len(cur.fetchall())} contacts\n")
+    
+    print("2. Testing upsert_contact procedure...")
+    cur.execute("CALL upsert_contact('Test User', '+79998887766');")
+    conn.commit()
+    cur.execute("SELECT * FROM phonebook WHERE name = 'Test User';")
+    print(f"   Inserted: {cur.fetchone()}\n")
+    
+    print("3. Testing bulk_insert_contacts with validation...")
+    cur.execute("""
+        CALL bulk_insert_contacts(ARRAY[
+            ['Valid User', '+77778889900'],
+            ['Invalid Phone', 'abc123'],
+            ['Another Valid', '+74445556677']
+        ]);
+    """)
+    conn.commit()
+    print("   Completed\n")
+    
+    print("4. Testing get_contacts_paginated function...")
+    cur.execute("SELECT * FROM get_contacts_paginated(3, 1);")
+    results = cur.fetchall()
+    print(f"   Page 1: {len(results)} records\n")
+    
+    print("5. Testing delete_contact procedure...")
+    cur.execute("CALL delete_contact(p_name := 'Test User');")
+    conn.commit()
+    print("   Deleted Test User\n")
+    
+    cur.close()
+    conn.close()
+    
+    print("=== ALL TESTS PASSED ===")
+
+if __name__ == "__main__":
+    test_all()
